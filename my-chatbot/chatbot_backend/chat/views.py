@@ -5,6 +5,18 @@ import traceback
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from groq import Groq  # make sure you've installed groq via pip
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_user_info(request):
+    user = request.user
+    return Response({
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+    })
 
 @csrf_exempt
 def chat_view(request):

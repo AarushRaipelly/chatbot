@@ -4,6 +4,12 @@ import ChatMessage from "./ChatMessage";
 const ChatBox = () => {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [user, setUser] = useState(null);
+
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    // setIsAuthenticated(false);
+    return !!localStorage.getItem("access");
+  });
 
   const [sessions, setSessions] = useState(() => {
     return (
@@ -25,6 +31,23 @@ const ChatBox = () => {
   useEffect(() => {
     localStorage.setItem("sessions", JSON.stringify(sessions));
   }, [sessions]);
+  useEffect(() => {
+    const token = localStorage.getItem("access");
+    if (!token) return;
+
+    fetch("http://localhost:8000/api/user/", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        setUser(data);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch user info:", err);
+      });
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("messages", JSON.stringify(messages));
@@ -222,6 +245,12 @@ const ChatBox = () => {
       setSessions(newSessions);
     }
   };
+  const handleLogout = () => {
+    localStorage.removeItem("access");
+    localStorage.removeItem("refresh");
+    setIsAuthenticated(false);
+    // window.location.href = "/login";
+  };
 
   const currentMessages = messages[activeSessionId] || [];
 
@@ -309,16 +338,37 @@ const ChatBox = () => {
         <div className="p-4 border-t border-gray-700 text-xs text-gray-400">
           <div className="mb-1">© 2025 ChatClone</div>
           <div className="text-[10px]">Made by Aarush</div>
-          <button
-            onClick={() => {
-              localStorage.removeItem("access");
-              localStorage.removeItem("refresh");
-              window.location.href = "/login";
-            }}
-            className="text-red-400 hover:text-red-600 text-sm mt-4"
-          >
-            🚪 Logout
-          </button>
+          {isAuthenticated ? (
+            <div className="mt-4 space-y-2">
+              {user && (
+                <div className="text-white text-sm">
+                  👋 Welcome,{" "}
+                  <span className="font-semibold">{user.first_name}</span>
+                </div>
+              )}
+              <button
+                onClick={handleLogout}
+                className="text-red-400 hover:text-red-600 text-sm block"
+              >
+                🚪 Logout
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-2">
+              <button
+                onClick={() => (window.location.href = "/login")}
+                className="text-green-400 hover:text-green-600 text-sm block"
+              >
+                🔐 Login
+              </button>
+              <button
+                onClick={() => (window.location.href = "/register")}
+                className="text-blue-400 hover:text-blue-600 text-sm block"
+              >
+                📝 Register
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
