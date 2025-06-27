@@ -123,6 +123,105 @@ const ChatBox = () => {
       setActiveSessionId(updatedSessions[0].id);
     }
   };
+  const handleSora = () => {
+    const description = prompt("🎞️ Enter a scene description for Sora:");
+
+    if (!description || !description.trim()) {
+      alert("Scene description cannot be empty.");
+      return;
+    }
+
+    // Simulate a bot response
+    const userMessage = { role: "user", content: `Sora: ${description}` };
+    const botMessage = {
+      role: "assistant",
+      content: `🧠 Sora would generate a video for: "${description}". (Functionality coming soon!)`,
+    };
+
+    const updated = [
+      ...(messages[activeSessionId] || []),
+      userMessage,
+      botMessage,
+    ];
+    setMessages((prev) => ({
+      ...prev,
+      [activeSessionId]: updated,
+    }));
+
+    // Auto rename session title
+    const sessionIndex = sessions.findIndex((s) => s.id === activeSessionId);
+    if (
+      sessions[sessionIndex].title === `Chat ${activeSessionId}` ||
+      sessions[sessionIndex].title === "New chat"
+    ) {
+      const newSessions = [...sessions];
+      newSessions[sessionIndex].title = `Sora: ${description.slice(0, 20)}`;
+      setSessions(newSessions);
+    }
+  };
+
+  const handleSearch = () => {
+    const query = prompt("🔍 Enter your search term:");
+    if (!query) return;
+
+    const currentSessionMessages = messages[activeSessionId] || [];
+    const matchedMessages = currentSessionMessages.filter((msg) =>
+      msg.content.toLowerCase().includes(query.toLowerCase())
+    );
+
+    if (matchedMessages.length === 0) {
+      alert("No matches found.");
+    } else {
+      const summary = matchedMessages
+        .map((msg, i) => `${i + 1}. [${msg.role}] ${msg.content}`)
+        .join("\n\n");
+      alert(`Found ${matchedMessages.length} match(es):\n\n${summary}`);
+    }
+  };
+
+  const handleLibrary = () => {
+    const msg = { role: "assistant", content: "📚 Library is being built!" };
+    setMessages((prev) => ({
+      ...prev,
+      [activeSessionId]: [...(prev[activeSessionId] || []), msg],
+    }));
+  };
+
+  const handleGpts = () => {
+    const task = prompt("🤖 What do you want a GPT to help you with?");
+
+    if (!task || !task.trim()) {
+      alert("Task cannot be empty.");
+      return;
+    }
+
+    const userMessage = { role: "user", content: `GPTs: ${task}` };
+    const botMessage = {
+      role: "assistant",
+      content: `🤖 A GPT specialized in "${task}" could assist you with this. (Coming soon: tool suggestions!)`,
+    };
+
+    const updated = [
+      ...(messages[activeSessionId] || []),
+      userMessage,
+      botMessage,
+    ];
+    setMessages((prev) => ({
+      ...prev,
+      [activeSessionId]: updated,
+    }));
+
+    // Rename session if default
+    const sessionIndex = sessions.findIndex((s) => s.id === activeSessionId);
+    if (
+      sessions[sessionIndex].title === `Chat ${activeSessionId}` ||
+      sessions[sessionIndex].title === "New chat"
+    ) {
+      const newSessions = [...sessions];
+      newSessions[sessionIndex].title = `GPTs: ${task.slice(0, 20)}`;
+      setSessions(newSessions);
+    }
+  };
 
   const currentMessages = messages[activeSessionId] || [];
 
@@ -145,25 +244,25 @@ const ChatBox = () => {
 
         <div className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
           <button
-            onClick={() => handleNotImplemented("Search")}
+            onClick={handleSearch}
             className="w-full text-left text-sm text-white py-2 px-3 rounded hover:bg-gray-700"
           >
             🔍 Search
           </button>
           <button
-            onClick={() => handleNotImplemented("Library")}
+            onClick={handleLibrary}
             className="w-full text-left text-sm text-white py-2 px-3 rounded hover:bg-gray-700"
           >
             📚 Library
           </button>
           <button
-            onClick={() => handleNotImplemented("Sora")}
+            onClick={handleSora}
             className="w-full text-left text-sm text-white py-2 px-3 rounded hover:bg-gray-700"
           >
             🎞️ Sora
           </button>
           <button
-            onClick={() => handleNotImplemented("GPTs")}
+            onClick={handleGpts}
             className="w-full text-left text-sm text-white py-2 px-3 rounded hover:bg-gray-700"
           >
             🤖 GPTs
