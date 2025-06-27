@@ -2,54 +2,110 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const Register = () => {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [formData, setFormData] = useState({
+    first_name: "",
+    username: "",
+    email: "",
+    password: "",
+  });
   const navigate = useNavigate();
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const handleRegister = async () => {
+  const handleChange = (e) => {
+    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+
     try {
-      const response = await fetch("http://localhost:8000/api/register/", {
+      const res = await fetch("http://localhost:8000/api/register/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify(formData),
       });
 
-      if (response.ok) {
-        alert("Registered successfully!");
-        navigate("/login");
-      } else {
-        alert("Registration failed.");
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Registration failed");
       }
-    } catch (error) {
-      console.error("Registration error:", error);
+
+      setSuccess("🎉 Registered successfully! Redirecting to login...");
+      setFormData({ first_name: "", username: "", email: "", password: "" });
+
+      setTimeout(() => {
+        navigate("/login");
+      }, 2000);
+    } catch (err) {
+      setError(err.message);
     }
   };
 
   return (
-    <div className="flex items-center justify-center h-screen bg-gray-800 text-white">
-      <div className="bg-gray-700 p-8 rounded shadow-md w-80">
-        <h2 className="text-xl mb-6 font-bold">Register</h2>
+    <div className="min-h-screen flex items-center justify-center bg-[#202123] text-white">
+      <form
+        onSubmit={handleSubmit}
+        className="bg-[#343541] p-8 rounded shadow-md w-96 space-y-4"
+      >
+        <h2 className="text-xl font-semibold mb-2">📝 Register</h2>
+
         <input
-          className="w-full mb-4 px-4 py-2 rounded bg-gray-600 placeholder-gray-300"
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          name="first_name"
+          placeholder="First Name"
+          value={formData.first_name}
+          onChange={handleChange}
+          className="w-full px-3 py-2 bg-[#40414f] rounded border border-gray-600 text-white"
+          required
         />
         <input
-          className="w-full mb-4 px-4 py-2 rounded bg-gray-600 placeholder-gray-300"
-          type="password"
+          name="last_name"
+          placeholder="last_name"
+          value={formData.last_name}
+          onChange={handleChange}
+          className="w-full px-3 py-2 bg-[#40414f] rounded border border-gray-600 text-white"
+          required
+        />
+        <input
+          name="username"
+          placeholder="username Name"
+          value={formData.username}
+          onChange={handleChange}
+          className="w-full px-3 py-2 bg-[#40414f] rounded border border-gray-600 text-white"
+          required
+        />
+        <input
+          name="email"
+          placeholder="Email"
+          type="email"
+          value={formData.email}
+          onChange={handleChange}
+          className="w-full px-3 py-2 bg-[#40414f] rounded border border-gray-600 text-white"
+          required
+        />
+        <input
+          name="password"
           placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          type="password"
+          value={formData.password}
+          onChange={handleChange}
+          className="w-full px-3 py-2 bg-[#40414f] rounded border border-gray-600 text-white"
+          required
         />
+
         <button
-          className="w-full bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded"
-          onClick={handleRegister}
+          type="submit"
+          className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded"
         >
           Register
         </button>
-      </div>
+
+        {error && <div className="text-red-400 text-sm">{error}</div>}
+        {success && <div className="text-green-400 text-sm">{success}</div>}
+      </form>
     </div>
   );
 };

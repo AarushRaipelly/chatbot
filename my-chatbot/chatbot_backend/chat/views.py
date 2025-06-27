@@ -8,6 +8,33 @@ from groq import Groq  # make sure you've installed groq via pip
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+from django.contrib.auth.models import User
+from django.contrib.auth.hashers import make_password
+
+@api_view(['POST'])
+def register_user(request):
+    data = request.data
+    try:
+        if User.objects.filter(username=data['username']).exists():
+            return Response({'error': 'Username already exists'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(email=data['email']).exists():
+            return Response({'error': 'Email already exists'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.create(
+            first_name=data['first_name'],
+            username=data['username'],
+            email=data['email'],
+            password=make_password(data['password'])  # Hash the password
+        )
+
+        return Response({'message': 'User registered successfully'}, status=status.HTTP_201_CREATED)
+    except KeyError as e:
+        return Response({'error': f'Missing field: {e}'}, status=status.HTTP_400_BAD_REQUEST)
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
