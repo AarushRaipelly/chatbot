@@ -426,7 +426,7 @@ const ChatBox = () => {
             onClick={handleSearch}
             className="w-full text-left text-sm text-white py-2 px-3 rounded hover:bg-gray-700"
           >
-            🔍 Search Current Session
+            🔍 Search
           </button>
           <button
             onClick={handleLibrary}
