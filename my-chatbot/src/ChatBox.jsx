@@ -11,30 +11,16 @@ const ChatBox = () => {
     return !!localStorage.getItem("access");
   });
 
-  const [sessions, setSessions] = useState(() => {
-    return (
-      JSON.parse(localStorage.getItem("sessions")) || [
-        { id: 1, title: "New chat" },
-      ]
-    );
-  });
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(null);
+  const [messages, setMessages] = useState([]);
 
-  const [activeSessionId, setActiveSessionId] = useState(() => {
-    return JSON.parse(localStorage.getItem("activeSessionId")) || 1;
-  });
-
-  const [messages, setMessages] = useState(() => {
-    return JSON.parse(localStorage.getItem("messages")) || { 1: [] };
-  });
-
-  // Sync all to localStorage
-  useEffect(() => {
-    localStorage.setItem("sessions", JSON.stringify(sessions));
-  }, [sessions]);
+  // Fetch user info and sessions on mount
   useEffect(() => {
     const token = localStorage.getItem("access");
     if (!token) return;
 
+    // Fetch user info
     fetch("http://localhost:8000/api/user/", {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -47,30 +33,64 @@ const ChatBox = () => {
       .catch((err) => {
         console.error("Failed to fetch user info:", err);
       });
+
+    // Fetch sessions
+    fetchSessions();
   }, []);
 
+  // Fetch messages when active session changes
   useEffect(() => {
-    localStorage.setItem("messages", JSON.stringify(messages));
-  }, [messages]);
-
-  useEffect(() => {
-    localStorage.setItem("activeSessionId", JSON.stringify(activeSessionId));
+    if (activeSessionId) {
+      fetchMessages(activeSessionId);
+    }
   }, [activeSessionId]);
 
+  const fetchSessions = async () => {
+    const token = localStorage.getItem("access");
+    if (!token) return;
+
+    try {
+      const response = await fetch("http://localhost:8000/api/sessions/", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await response.json();
+      setSessions(data);
+      
+      // Set first session as active if no active session
+      if (data.length > 0 && !activeSessionId) {
+        setActiveSessionId(data[0].id);
+      }
+    } catch (err) {
+      console.error("Failed to fetch sessions:", err);
+    }
+  };
+
+  const fetchMessages = async (sessionId) => {
+    const token = localStorage.getItem("access");
+    if (!token) return;
+
+    try {
+      const response = await fetch(`http://localhost:8000/api/sessions/${sessionId}/messages/`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await response.json();
+      setMessages(data);
+    } catch (err) {
+      console.error("Failed to fetch messages:", err);
+    }
+  };
+
   const sendMessage = async () => {
-    if (!input.trim() || sending) return;
+    if (!input.trim() || sending || !activeSessionId) return;
 
-    const userMessage = { role: "user", content: input };
-    const updatedUserMessages = [
-      ...(messages[activeSessionId] || []),
-      userMessage,
-    ];
+    const token = localStorage.getItem("access");
+    if (!token) return;
 
-    setMessages((prev) => ({
-      ...prev,
-      [activeSessionId]: updatedUserMessages,
-    }));
-
+    const currentInput = input;
     setInput("");
     setSending(true);
 
@@ -79,29 +99,23 @@ const ChatBox = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({ 
+          message: currentInput,
+          session_id: activeSessionId 
+        }),
       });
 
       if (!response.ok) throw new Error("Network error");
 
       const data = await response.json();
-      const botMessage = { role: "assistant", content: data.response };
-
-      setMessages((prev) => ({
-        ...prev,
-        [activeSessionId]: [...(prev[activeSessionId] || []), botMessage],
-      }));
-
-      // Update title if needed
-      setSessions((prev) => {
-        return prev.map((s) =>
-          s.id === activeSessionId &&
-          (s.title === "New chat" || s.title.startsWith("Chat "))
-            ? { ...s, title: userMessage.content.slice(0, 20) }
-            : s
-        );
-      });
+      
+      // Refresh messages after sending
+      await fetchMessages(activeSessionId);
+      
+      // Refresh sessions to get updated titles
+      await fetchSessions();
     } catch (err) {
       console.error("Error:", err);
     } finally {
@@ -109,77 +123,153 @@ const ChatBox = () => {
     }
   };
 
-  const handleClear = () => {
-    setMessages({ ...messages, [activeSessionId]: [] });
+  const handleClear = async () => {
+    if (!activeSessionId) return;
+    
+    const token = localStorage.getItem("access");
+    if (!token) return;
+
+    try {
+      // Delete all messages by deleting and recreating the session
+      await fetch(`http://localhost:8000/api/sessions/${activeSessionId}/delete/`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      // Create a new session
+      const response = await fetch("http://localhost:8000/api/sessions/create/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ title: "New Chat" }),
+      });
+      
+      const newSession = await response.json();
+      setActiveSessionId(newSession.id);
+      setMessages([]);
+      
+      // Refresh sessions
+      await fetchSessions();
+    } catch (err) {
+      console.error("Error clearing chat:", err);
+    }
   };
 
-  const handleNewSession = () => {
-    const newId = Math.max(...sessions.map((s) => s.id)) + 1;
-    const updatedSessions = [
-      ...sessions,
-      { id: newId, title: `Chat ${newId}` },
-    ];
-    setSessions(updatedSessions);
-    setActiveSessionId(newId);
-    setMessages({ ...messages, [newId]: [] });
+  const handleNewSession = async () => {
+    const token = localStorage.getItem("access");
+    if (!token) return;
+
+    try {
+      const response = await fetch("http://localhost:8000/api/sessions/create/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ title: "New Chat" }),
+      });
+      
+      const newSession = await response.json();
+      setActiveSessionId(newSession.id);
+      setMessages([]);
+      
+      // Refresh sessions
+      await fetchSessions();
+    } catch (err) {
+      console.error("Error creating new session:", err);
+    }
   };
 
-  const handleEditSession = (id) => {
+  const handleEditSession = async (id) => {
     const newTitle = prompt("Edit session name:");
-    if (newTitle) {
-      const updated = sessions.map((s) =>
-        s.id === id ? { ...s, title: newTitle } : s
-      );
-      setSessions(updated);
+    if (!newTitle) return;
+    
+    const token = localStorage.getItem("access");
+    if (!token) return;
+
+    try {
+      await fetch(`http://localhost:8000/api/sessions/${id}/`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ title: newTitle }),
+      });
+      
+      // Refresh sessions
+      await fetchSessions();
+    } catch (err) {
+      console.error("Error editing session:", err);
     }
   };
 
-  const handleDeleteSession = (id) => {
-    const updatedSessions = sessions.filter((s) => s.id !== id);
-    const updatedMessages = { ...messages };
-    delete updatedMessages[id];
+  const handleDeleteSession = async (id) => {
+    const token = localStorage.getItem("access");
+    if (!token) return;
 
-    setSessions(updatedSessions);
-    setMessages(updatedMessages);
-
-    if (activeSessionId === id && updatedSessions.length > 0) {
-      setActiveSessionId(updatedSessions[0].id);
+    try {
+      await fetch(`http://localhost:8000/api/sessions/${id}/delete/`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      // If deleted session was active, switch to first available session
+      if (activeSessionId === id) {
+        const remainingSessions = sessions.filter(s => s.id !== id);
+        if (remainingSessions.length > 0) {
+          setActiveSessionId(remainingSessions[0].id);
+        } else {
+          // Create a new session if no sessions left
+          await handleNewSession();
+          return;
+        }
+      }
+      
+      // Refresh sessions
+      await fetchSessions();
+    } catch (err) {
+      console.error("Error deleting session:", err);
     }
   };
-  const handleSora = () => {
+  const handleSora = async () => {
+    if (!activeSessionId) return;
+    
     const description = prompt("🎞️ Enter a scene description for Sora:");
-
     if (!description || !description.trim()) {
       alert("Scene description cannot be empty.");
       return;
     }
 
-    // Simulate a bot response
-    const userMessage = { role: "user", content: `Sora: ${description}` };
-    const botMessage = {
-      role: "assistant",
-      content: `🧠 Sora would generate a video for: "${description}". (Functionality coming soon!)`,
-    };
+    const token = localStorage.getItem("access");
+    if (!token) return;
 
-    const updated = [
-      ...(messages[activeSessionId] || []),
-      userMessage,
-      botMessage,
-    ];
-    setMessages((prev) => ({
-      ...prev,
-      [activeSessionId]: updated,
-    }));
+    try {
+      // Send the Sora request as a regular chat message
+      const response = await fetch("http://localhost:8000/api/chat/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ 
+          message: `Sora: ${description}`,
+          session_id: activeSessionId 
+        }),
+      });
 
-    // Auto rename session title
-    const sessionIndex = sessions.findIndex((s) => s.id === activeSessionId);
-    if (
-      sessions[sessionIndex].title === `Chat ${activeSessionId}` ||
-      sessions[sessionIndex].title === "New chat"
-    ) {
-      const newSessions = [...sessions];
-      newSessions[sessionIndex].title = `Sora: ${description.slice(0, 20)}`;
-      setSessions(newSessions);
+      if (response.ok) {
+        await fetchMessages(activeSessionId);
+        await fetchSessions();
+      }
+    } catch (err) {
+      console.error("Error with Sora request:", err);
     }
   };
 
@@ -187,7 +277,7 @@ const ChatBox = () => {
     const query = prompt("🔍 Enter your search term:");
     if (!query) return;
 
-    const currentSessionMessages = messages[activeSessionId] || [];
+    const currentSessionMessages = messages || [];
     const matchedMessages = currentSessionMessages.filter((msg) =>
       msg.content.toLowerCase().includes(query.toLowerCase())
     );
@@ -202,47 +292,64 @@ const ChatBox = () => {
     }
   };
 
-  const handleLibrary = () => {
-    const msg = { role: "assistant", content: "📚 Library is being built!" };
-    setMessages((prev) => ({
-      ...prev,
-      [activeSessionId]: [...(prev[activeSessionId] || []), msg],
-    }));
+  const handleLibrary = async () => {
+    if (!activeSessionId) return;
+    
+    const token = localStorage.getItem("access");
+    if (!token) return;
+
+    try {
+      const response = await fetch("http://localhost:8000/api/chat/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ 
+          message: "📚 Library functionality",
+          session_id: activeSessionId 
+        }),
+      });
+
+      if (response.ok) {
+        await fetchMessages(activeSessionId);
+      }
+    } catch (err) {
+      console.error("Error with Library request:", err);
+    }
   };
 
-  const handleGpts = () => {
+  const handleGpts = async () => {
+    if (!activeSessionId) return;
+    
     const task = prompt("🤖 What do you want a GPT to help you with?");
-
     if (!task || !task.trim()) {
       alert("Task cannot be empty.");
       return;
     }
 
-    const userMessage = { role: "user", content: `GPTs: ${task}` };
-    const botMessage = {
-      role: "assistant",
-      content: `🤖 A GPT specialized in "${task}" could assist you with this. (Coming soon: tool suggestions!)`,
-    };
+    const token = localStorage.getItem("access");
+    if (!token) return;
 
-    const updated = [
-      ...(messages[activeSessionId] || []),
-      userMessage,
-      botMessage,
-    ];
-    setMessages((prev) => ({
-      ...prev,
-      [activeSessionId]: updated,
-    }));
+    try {
+      const response = await fetch("http://localhost:8000/api/chat/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ 
+          message: `GPTs: ${task}`,
+          session_id: activeSessionId 
+        }),
+      });
 
-    // Rename session if default
-    const sessionIndex = sessions.findIndex((s) => s.id === activeSessionId);
-    if (
-      sessions[sessionIndex].title === `Chat ${activeSessionId}` ||
-      sessions[sessionIndex].title === "New chat"
-    ) {
-      const newSessions = [...sessions];
-      newSessions[sessionIndex].title = `GPTs: ${task.slice(0, 20)}`;
-      setSessions(newSessions);
+      if (response.ok) {
+        await fetchMessages(activeSessionId);
+        await fetchSessions();
+      }
+    } catch (err) {
+      console.error("Error with GPTs request:", err);
     }
   };
   const handleLogout = () => {
@@ -252,7 +359,7 @@ const ChatBox = () => {
     // window.location.href = "/login";
   };
 
-  const currentMessages = messages[activeSessionId] || [];
+  const currentMessages = messages || [];
 
   const handleNotImplemented = (name) => {
     alert(`${name} is not implemented yet.`);
