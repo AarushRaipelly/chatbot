@@ -7,30 +7,53 @@ const ChatBox = () => {
   const [user, setUser] = useState(null);
 
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    // setIsAuthenticated(false);
     return !!localStorage.getItem("access");
   });
 
+  // Initialize sessions with proper structure
   const [sessions, setSessions] = useState(() => {
-    return (
-      JSON.parse(localStorage.getItem("sessions")) || [
-        { id: 1, title: "New chat" },
-      ]
-    );
+    const stored = localStorage.getItem("sessions");
+    if (stored) {
+      return JSON.parse(stored);
+    }
+    // Default session structure
+    const defaultSession = {
+      id: 1,
+      title: "New chat",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      messageCount: 0,
+    };
+    return [defaultSession];
   });
 
   const [activeSessionId, setActiveSessionId] = useState(() => {
-    return JSON.parse(localStorage.getItem("activeSessionId")) || 1;
+    const stored = localStorage.getItem("activeSessionId");
+    return stored ? JSON.parse(stored) : 1;
   });
 
-  const [messages, setMessages] = useState(() => {
-    return JSON.parse(localStorage.getItem("messages")) || { 1: [] };
+  // Store messages separately for each session
+  const [sessionMessages, setSessionMessages] = useState(() => {
+    const stored = localStorage.getItem("sessionMessages");
+    return stored ? JSON.parse(stored) : { 1: [] };
   });
 
-  // Sync all to localStorage
+  // Sync sessions to localStorage
   useEffect(() => {
     localStorage.setItem("sessions", JSON.stringify(sessions));
   }, [sessions]);
+
+  // Sync messages to localStorage
+  useEffect(() => {
+    localStorage.setItem("sessionMessages", JSON.stringify(sessionMessages));
+  }, [sessionMessages]);
+
+  // Sync active session to localStorage
+  useEffect(() => {
+    localStorage.setItem("activeSessionId", JSON.stringify(activeSessionId));
+  }, [activeSessionId]);
+
+  // Fetch user info
   useEffect(() => {
     const token = localStorage.getItem("access");
     if (!token) return;
@@ -49,28 +72,24 @@ const ChatBox = () => {
       });
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem("messages", JSON.stringify(messages));
-  }, [messages]);
-
-  useEffect(() => {
-    localStorage.setItem("activeSessionId", JSON.stringify(activeSessionId));
-  }, [activeSessionId]);
-
   const sendMessage = async () => {
     if (!input.trim() || sending) return;
 
-    const userMessage = { role: "user", content: input };
-    const updatedUserMessages = [
-      ...(messages[activeSessionId] || []),
-      userMessage,
-    ];
+    const messageId = Date.now();
+    const userMessage = {
+      id: messageId,
+      role: "user",
+      content: input,
+      timestamp: new Date().toISOString(),
+    };
 
-    setMessages((prev) => ({
+    // Add user message to current session
+    setSessionMessages((prev) => ({
       ...prev,
-      [activeSessionId]: updatedUserMessages,
+      [activeSessionId]: [...(prev[activeSessionId] || []), userMessage],
     }));
 
+    const messageText = input;
     setInput("");
     setSending(true);
 
@@ -79,73 +98,170 @@ const ChatBox = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(localStorage.getItem("access") && {
+            Authorization: `Bearer ${localStorage.getItem("access")}`,
+          }),
         },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({
+          message: messageText,
+          sessionId: activeSessionId,
+        }),
       });
 
       if (!response.ok) throw new Error("Network error");
 
       const data = await response.json();
-      const botMessage = { role: "assistant", content: data.response };
+      const botMessage = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: data.response,
+        timestamp: new Date().toISOString(),
+      };
 
-      setMessages((prev) => ({
+      // Add bot response to current session
+      setSessionMessages((prev) => ({
         ...prev,
         [activeSessionId]: [...(prev[activeSessionId] || []), botMessage],
       }));
 
-      // Update title if needed
-      setSessions((prev) => {
-        return prev.map((s) =>
-          s.id === activeSessionId &&
-          (s.title === "New chat" || s.title.startsWith("Chat "))
-            ? { ...s, title: userMessage.content.slice(0, 20) }
-            : s
-        );
-      });
+      // Update session metadata
+      updateSessionMetadata(activeSessionId, messageText);
     } catch (err) {
       console.error("Error:", err);
+      // Add error message to session
+      const errorMessage = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: "Sorry, I encountered an error. Please try again.",
+        timestamp: new Date().toISOString(),
+        isError: true,
+      };
+
+      setSessionMessages((prev) => ({
+        ...prev,
+        [activeSessionId]: [...(prev[activeSessionId] || []), errorMessage],
+      }));
     } finally {
       setSending(false);
     }
   };
 
+  const updateSessionMetadata = (sessionId, firstMessage = null) => {
+    setSessions((prev) => {
+      return prev.map((session) => {
+        if (session.id === sessionId) {
+          const currentMessages = sessionMessages[sessionId] || [];
+          const messageCount = currentMessages.length + 2; // +2 for the new user and bot messages
+
+          let newTitle = session.title;
+          // Auto-update title if it's still default and we have a first message
+          if (
+            (session.title === "New chat" ||
+              session.title.startsWith("Chat ")) &&
+            firstMessage
+          ) {
+            newTitle =
+              firstMessage.slice(0, 30) +
+              (firstMessage.length > 30 ? "..." : "");
+          }
+
+          return {
+            ...session,
+            title: newTitle,
+            updatedAt: new Date().toISOString(),
+            messageCount: messageCount,
+          };
+        }
+        return session;
+      });
+    });
+  };
+
   const handleClear = () => {
-    setMessages({ ...messages, [activeSessionId]: [] });
+    if (window.confirm("Are you sure you want to clear this conversation?")) {
+      setSessionMessages((prev) => ({
+        ...prev,
+        [activeSessionId]: [],
+      }));
+
+      // Update session metadata
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === activeSessionId
+            ? {
+                ...session,
+                messageCount: 0,
+                updatedAt: new Date().toISOString(),
+              }
+            : session
+        )
+      );
+    }
   };
 
   const handleNewSession = () => {
-    const newId = Math.max(...sessions.map((s) => s.id)) + 1;
-    const updatedSessions = [
-      ...sessions,
-      { id: newId, title: `Chat ${newId}` },
-    ];
-    setSessions(updatedSessions);
+    const newId = Math.max(...sessions.map((s) => s.id), 0) + 1;
+    const newSession = {
+      id: newId,
+      title: "New chat",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      messageCount: 0,
+    };
+
+    setSessions((prev) => [newSession, ...prev]); // Add new session at the top
     setActiveSessionId(newId);
-    setMessages({ ...messages, [newId]: [] });
+    setSessionMessages((prev) => ({ ...prev, [newId]: [] }));
   };
 
   const handleEditSession = (id) => {
-    const newTitle = prompt("Edit session name:");
-    if (newTitle) {
-      const updated = sessions.map((s) =>
-        s.id === id ? { ...s, title: newTitle } : s
+    const currentSession = sessions.find((s) => s.id === id);
+    const newTitle = prompt("Edit session name:", currentSession?.title || "");
+
+    if (newTitle && newTitle.trim()) {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === id
+            ? {
+                ...session,
+                title: newTitle.trim(),
+                updatedAt: new Date().toISOString(),
+              }
+            : session
+        )
       );
-      setSessions(updated);
     }
   };
 
   const handleDeleteSession = (id) => {
-    const updatedSessions = sessions.filter((s) => s.id !== id);
-    const updatedMessages = { ...messages };
-    delete updatedMessages[id];
+    if (sessions.length <= 1) {
+      alert("Cannot delete the last session. Create a new one first.");
+      return;
+    }
 
-    setSessions(updatedSessions);
-    setMessages(updatedMessages);
+    if (
+      window.confirm(
+        "Are you sure you want to delete this session? This action cannot be undone."
+      )
+    ) {
+      // Remove session from sessions array
+      const updatedSessions = sessions.filter((s) => s.id !== id);
+      setSessions(updatedSessions);
 
-    if (activeSessionId === id && updatedSessions.length > 0) {
-      setActiveSessionId(updatedSessions[0].id);
+      // Remove messages for this session
+      setSessionMessages((prev) => {
+        const updated = { ...prev };
+        delete updated[id];
+        return updated;
+      });
+
+      // If we deleted the active session, switch to the first available session
+      if (activeSessionId === id && updatedSessions.length > 0) {
+        setActiveSessionId(updatedSessions[0].id);
+      }
     }
   };
+
   const handleSora = () => {
     const description = prompt("🎞️ Enter a scene description for Sora:");
 
@@ -154,57 +270,67 @@ const ChatBox = () => {
       return;
     }
 
-    // Simulate a bot response
-    const userMessage = { role: "user", content: `Sora: ${description}` };
-    const botMessage = {
-      role: "assistant",
-      content: `🧠 Sora would generate a video for: "${description}". (Functionality coming soon!)`,
+    const userMessage = {
+      id: Date.now(),
+      role: "user",
+      content: `Sora: ${description}`,
+      timestamp: new Date().toISOString(),
     };
 
-    const updated = [
-      ...(messages[activeSessionId] || []),
-      userMessage,
-      botMessage,
-    ];
-    setMessages((prev) => ({
+    const botMessage = {
+      id: Date.now() + 1,
+      role: "assistant",
+      content: `🧠 Sora would generate a video for: "${description}". (Functionality coming soon!)`,
+      timestamp: new Date().toISOString(),
+    };
+
+    setSessionMessages((prev) => ({
       ...prev,
-      [activeSessionId]: updated,
+      [activeSessionId]: [
+        ...(prev[activeSessionId] || []),
+        userMessage,
+        botMessage,
+      ],
     }));
 
-    // Auto rename session title
-    const sessionIndex = sessions.findIndex((s) => s.id === activeSessionId);
-    if (
-      sessions[sessionIndex].title === `Chat ${activeSessionId}` ||
-      sessions[sessionIndex].title === "New chat"
-    ) {
-      const newSessions = [...sessions];
-      newSessions[sessionIndex].title = `Sora: ${description.slice(0, 20)}`;
-      setSessions(newSessions);
-    }
+    updateSessionMetadata(activeSessionId, `Sora: ${description}`);
   };
 
   const handleSearch = () => {
     const query = prompt("🔍 Enter your search term:");
     if (!query) return;
 
-    const currentSessionMessages = messages[activeSessionId] || [];
-    const matchedMessages = currentSessionMessages.filter((msg) =>
+    const currentMessages = sessionMessages[activeSessionId] || [];
+    const matchedMessages = currentMessages.filter((msg) =>
       msg.content.toLowerCase().includes(query.toLowerCase())
     );
 
     if (matchedMessages.length === 0) {
-      alert("No matches found.");
+      alert("No matches found in this session.");
     } else {
       const summary = matchedMessages
-        .map((msg, i) => `${i + 1}. [${msg.role}] ${msg.content}`)
+        .map(
+          (msg, i) =>
+            `${i + 1}. [${msg.role}] ${msg.content.slice(0, 100)}${
+              msg.content.length > 100 ? "..." : ""
+            }`
+        )
         .join("\n\n");
-      alert(`Found ${matchedMessages.length} match(es):\n\n${summary}`);
+      alert(
+        `Found ${matchedMessages.length} match(es) in this session:\n\n${summary}`
+      );
     }
   };
 
   const handleLibrary = () => {
-    const msg = { role: "assistant", content: "📚 Library is being built!" };
-    setMessages((prev) => ({
+    const msg = {
+      id: Date.now(),
+      role: "assistant",
+      content: "📚 Library is being built!",
+      timestamp: new Date().toISOString(),
+    };
+
+    setSessionMessages((prev) => ({
       ...prev,
       [activeSessionId]: [...(prev[activeSessionId] || []), msg],
     }));
@@ -218,45 +344,55 @@ const ChatBox = () => {
       return;
     }
 
-    const userMessage = { role: "user", content: `GPTs: ${task}` };
-    const botMessage = {
-      role: "assistant",
-      content: `🤖 A GPT specialized in "${task}" could assist you with this. (Coming soon: tool suggestions!)`,
+    const userMessage = {
+      id: Date.now(),
+      role: "user",
+      content: `GPTs: ${task}`,
+      timestamp: new Date().toISOString(),
     };
 
-    const updated = [
-      ...(messages[activeSessionId] || []),
-      userMessage,
-      botMessage,
-    ];
-    setMessages((prev) => ({
+    const botMessage = {
+      id: Date.now() + 1,
+      role: "assistant",
+      content: `🤖 A GPT specialized in "${task}" could assist you with this. (Coming soon: tool suggestions!)`,
+      timestamp: new Date().toISOString(),
+    };
+
+    setSessionMessages((prev) => ({
       ...prev,
-      [activeSessionId]: updated,
+      [activeSessionId]: [
+        ...(prev[activeSessionId] || []),
+        userMessage,
+        botMessage,
+      ],
     }));
 
-    // Rename session if default
-    const sessionIndex = sessions.findIndex((s) => s.id === activeSessionId);
-    if (
-      sessions[sessionIndex].title === `Chat ${activeSessionId}` ||
-      sessions[sessionIndex].title === "New chat"
-    ) {
-      const newSessions = [...sessions];
-      newSessions[sessionIndex].title = `GPTs: ${task.slice(0, 20)}`;
-      setSessions(newSessions);
+    updateSessionMetadata(activeSessionId, `GPTs: ${task}`);
+  };
+
+  const handleLogout = () => {
+    if (window.confirm("Are you sure you want to logout?")) {
+      localStorage.removeItem("access");
+      localStorage.removeItem("refresh");
+      setIsAuthenticated(false);
+      // Optionally clear session data on logout
+      // localStorage.removeItem("sessions");
+      // localStorage.removeItem("sessionMessages");
+      // localStorage.removeItem("activeSessionId");
     }
   };
-  const handleLogout = () => {
-    localStorage.removeItem("access");
-    localStorage.removeItem("refresh");
-    setIsAuthenticated(false);
-    // window.location.href = "/login";
+
+  const switchSession = (sessionId) => {
+    setActiveSessionId(sessionId);
   };
 
-  const currentMessages = messages[activeSessionId] || [];
+  const currentMessages = sessionMessages[activeSessionId] || [];
+  const currentSession = sessions.find((s) => s.id === activeSessionId);
 
-  const handleNotImplemented = (name) => {
-    alert(`${name} is not implemented yet.`);
-  };
+  // Sort sessions by most recently updated
+  const sortedSessions = [...sessions].sort(
+    (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)
+  );
 
   return (
     <div className="flex h-screen text-white bg-[#343541]">
@@ -276,7 +412,7 @@ const ChatBox = () => {
             onClick={handleSearch}
             className="w-full text-left text-sm text-white py-2 px-3 rounded hover:bg-gray-700"
           >
-            🔍 Search
+            🔍 Search Current Session
           </button>
           <button
             onClick={handleLibrary}
@@ -299,7 +435,11 @@ const ChatBox = () => {
 
           <hr className="my-2 border-gray-600" />
 
-          {sessions.map((session) => (
+          <div className="text-xs text-gray-400 px-2 mb-2">
+            Recent Sessions ({sessions.length})
+          </div>
+
+          {sortedSessions.map((session) => (
             <div
               key={session.id}
               className={`group flex items-center justify-between p-2 rounded cursor-pointer ${
@@ -308,24 +448,34 @@ const ChatBox = () => {
                   : "hover:bg-gray-700"
               }`}
             >
-              <span
-                className="flex-1 truncate"
-                onClick={() => setActiveSessionId(session.id)}
-                title={session.title}
+              <div
+                className="flex-1 min-w-0"
+                onClick={() => switchSession(session.id)}
               >
-                {session.title}
-              </span>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="truncate text-sm" title={session.title}>
+                  {session.title}
+                </div>
+                <div className="text-xs text-gray-400">
+                  {session.messageCount} messages
+                </div>
+              </div>
+              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
                 <button
-                  onClick={() => handleEditSession(session.id)}
-                  className="text-gray-400 hover:text-white text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEditSession(session.id);
+                  }}
+                  className="text-gray-400 hover:text-white text-xs p-1"
                   title="Edit"
                 >
                   ✏️
                 </button>
                 <button
-                  onClick={() => handleDeleteSession(session.id)}
-                  className="text-red-400 hover:text-red-600 text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteSession(session.id);
+                  }}
+                  className="text-red-400 hover:text-red-600 text-xs p-1"
                   title="Delete"
                 >
                   🗑️
@@ -374,10 +524,46 @@ const ChatBox = () => {
 
       {/* Chat Area */}
       <div className="flex flex-col justify-between flex-1 p-4 bg-[#343541]">
+        {/* Session Header */}
+        <div className="mb-4 pb-2 border-b border-gray-700">
+          <div>
+            <h2 className="text-lg font-semibold">
+              {currentSession?.title || "Chat Session"}
+            </h2>
+            <div className="text-sm text-gray-400">
+              {currentMessages.length} messages
+              {currentSession?.updatedAt && (
+                <span className="ml-2">
+                  • Last updated:{" "}
+                  {new Date(currentSession.updatedAt).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="flex-1 overflow-y-auto pr-2">
-          {currentMessages.map((msg, i) => (
-            <ChatMessage key={i} role={msg.role} content={msg.content} />
-          ))}
+          {currentMessages.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-gray-400">
+              <div className="text-center">
+                <div className="text-4xl mb-4">💬</div>
+                <div>Start a new conversation</div>
+                <div className="text-sm mt-2">
+                  Type a message below to begin
+                </div>
+              </div>
+            </div>
+          ) : (
+            currentMessages.map((msg) => (
+              <ChatMessage
+                key={msg.id || `${msg.role}-${msg.timestamp}`}
+                role={msg.role}
+                content={msg.content}
+                timestamp={msg.timestamp}
+                isError={msg.isError}
+              />
+            ))
+          )}
         </div>
 
         <div className="mt-4 flex items-center gap-2">
@@ -387,20 +573,22 @@ const ChatBox = () => {
             placeholder="Type a message..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
+            disabled={sending}
           />
           <button
-            onClick={sendMessage}
-            disabled={sending}
-            className="bg-gray-200 hover:bg-gray-300 text-black px-4 py-2 rounded-lg text-sm shadow-sm"
-          >
-            Send
-          </button>
-          <button
             onClick={handleClear}
-            className="bg-gray-200 hover:bg-gray-300 text-black px-4 py-2 rounded-lg text-sm shadow-sm"
+            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm shadow-sm transition-colors"
+            title="Clear this session"
           >
             Clear
+          </button>
+          <button
+            onClick={sendMessage}
+            disabled={sending || !input.trim()}
+            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm shadow-sm transition-colors"
+          >
+            {sending ? "..." : "Send"}
           </button>
         </div>
       </div>
