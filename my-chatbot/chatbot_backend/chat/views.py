@@ -71,3 +71,39 @@ def chat_view(request):
     except Exception as e:
         traceback.print_exc()
         return JsonResponse({"error": str(e)}, status=500)
+
+
+from groq import Groq
+
+def chat_api(request):
+    data = request.json()
+    message = data.get('message')
+    session_id = data.get('sessionId')
+    conversation_history = data.get('conversationHistory', [])
+    system_prompt = data.get('systemPrompt', 'You are a helpful assistant.')
+    
+    client = Groq(api_key="your-groq-api-key")
+    
+    # Build messages array with conversation history
+    messages = [
+        {"role": "system", "content": system_prompt}
+    ]
+    
+    # Add conversation history (this maintains context)
+    for msg in conversation_history:
+        messages.append({
+            "role": msg["role"],
+            "content": msg["content"]
+        })
+    
+    # Make the API call to Groq with full conversation context
+    chat_completion = client.chat.completions.create(
+        messages=messages,
+        model="llama3-8b-8192",  # or your preferred model
+        max_tokens=30,
+        temperature=0.7,
+    )
+    
+    response = chat_completion.choices[0].message.content
+    
+    return {"response": response}

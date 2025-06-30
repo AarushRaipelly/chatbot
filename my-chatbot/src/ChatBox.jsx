@@ -83,6 +83,9 @@ const ChatBox = () => {
       timestamp: new Date().toISOString(),
     };
 
+    // Get current conversation history
+    const currentMessages = sessionMessages[activeSessionId] || [];
+
     // Add user message to current session
     setSessionMessages((prev) => ({
       ...prev,
@@ -94,6 +97,17 @@ const ChatBox = () => {
     setSending(true);
 
     try {
+      // Create context from recent messages for simple backend compatibility
+      const recentMessages = [...currentMessages].slice(-4); // Last 4 messages for context
+      const contextString =
+        recentMessages.length > 0
+          ? `Previous conversation:\n${recentMessages
+              .map((msg) => `${msg.role}: ${msg.content}`)
+              .join("\n")}\n\nCurrent question: ${messageText}`
+          : messageText;
+
+      console.log("Sending context:", contextString);
+
       const response = await fetch("http://localhost:8000/api/chat/", {
         method: "POST",
         headers: {
@@ -103,7 +117,7 @@ const ChatBox = () => {
           }),
         },
         body: JSON.stringify({
-          message: messageText,
+          message: `Please respond in a short, friendly way (1-3 sentences max). ${contextString}`,
           sessionId: activeSessionId,
         }),
       });
