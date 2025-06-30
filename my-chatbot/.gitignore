@@ -25,4 +25,4 @@ dist-ssr
 .env
 /venv
 /env
-.*db.sqlite3
+.db.sqlite3
