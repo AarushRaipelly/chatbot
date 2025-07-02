@@ -1,15 +1,3 @@
-# from django.db import models
-
-# class Session(models.Model):
-#     title = models.CharField(max_length=100, default="New Chat")
-#     created_at = models.DateTimeField(auto_now_add=True)
-
-# class Message(models.Model):
-#     session = models.ForeignKey(Session, related_name='messages', on_delete=models.CASCADE)
-#     role = models.CharField(max_length=20)  # 'user' or 'assistant'
-#     content = models.TextField()
-#     timestamp = models.DateTimeField(auto_now_add=True)
-
 from django.db import models
 from django.contrib.auth.models import User
 import uuid
@@ -21,24 +9,36 @@ class Session(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_guest_session = models.BooleanField(default=False)
-    guest_session_id = models.CharField(max_length=100, null=True, blank=True)  # for guest session tracking
-
+    guest_session_id = models.CharField(max_length=100, null=True, blank=True, db_index=True)
+    # guest_session_id = models.CharField(max_length=100, null=True, blank=True)  # for guest session tracking
+    
     class Meta:
         ordering = ['-updated_at']
 
     def __str__(self):
         if self.user:
             return f"{self.user.username} - {self.title}"
-        return f"Guest - {self.title}"
+        return f"Guest - {self.title}" 
 
 class Message(models.Model):
+    # session = models.ForeignKey(Session, related_name='messages', on_delete=models.CASCADE)
+    # role = models.CharField(max_length=20)  # 'user' or 'assistant'
+    # content = models.TextField()
+    # timestamp = models.DateTimeField(auto_now_add=True)
+    ROLE_CHOICES = (
+        ('user', 'User'),
+        ('assistant', 'Assistant'),
+    )
+
     session = models.ForeignKey(Session, related_name='messages', on_delete=models.CASCADE)
-    role = models.CharField(max_length=20)  # 'user' or 'assistant'
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
     content = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['timestamp']
 
+    # def __str__(self):
+    #     return f"{self.role}: {self.content[:50]}..."
     def __str__(self):
-        return f"{self.role}: {self.content[:50]}..."
+        return f"[{self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}] {self.role}: {self.content[:50]}..."

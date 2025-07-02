@@ -165,12 +165,27 @@ def get_user_sessions(request):
     serializer = SessionSerializer(sessions, many=True)
     return Response(serializer.data)
 
+# @api_view(['GET'])
+# @permission_classes([IsAuthenticated])
+# def get_sessions(request):
+#     sessions = Session.objects.filter(user=request.user)
+#     serializer = SessionSerializer(sessions, many=True)
+#     return Response(serializer.data)
+
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def get_sessions(request):
-    sessions = Session.objects.filter(user=request.user)
+    if request.user.is_authenticated:
+        sessions = Session.objects.filter(user=request.user, is_guest_session=False)
+    else:
+        guest_session_id = request.GET.get('guest_session_id')
+        if not guest_session_id:
+            return Response({"error": "Guest session ID required"}, status=400)
+        sessions = Session.objects.filter(guest_session_id=guest_session_id, is_guest_session=True)
+
     serializer = SessionSerializer(sessions, many=True)
     return Response(serializer.data)
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -214,32 +229,73 @@ def session_messages(request, session_id):
     except Session.DoesNotExist:
         return Response({"error": "Session not found"}, status=404)
 
+# @api_view(['DELETE'])
+# @permission_classes([IsAuthenticated])
+# def delete_session(request, session_id):
+#     """Delete a session (only for authenticated users)"""
+#     try:
+#         session = Session.objects.get(id=session_id, user=request.user)
+#         session.delete()
+#         return Response({"message": "Session deleted successfully"})
+#     except Session.DoesNotExist:
+#         return Response({"error": "Session not found"}, status=404)
+
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def delete_session(request, session_id):
-    """Delete a session (only for authenticated users)"""
     try:
-        session = Session.objects.get(id=session_id, user=request.user)
+        if request.user.is_authenticated:
+            session = Session.objects.get(id=session_id, user=request.user)
+        else:
+            guest_session_id = request.data.get('guest_session_id')
+            if not guest_session_id:
+                return Response({"error": "Guest session ID required"}, status=400)
+            session = Session.objects.get(id=session_id, is_guest_session=True, guest_session_id=guest_session_id)
+
         session.delete()
         return Response({"message": "Session deleted successfully"})
     except Session.DoesNotExist:
         return Response({"error": "Session not found"}, status=404)
 
+
+# @api_view(['PUT'])
+# @permission_classes([IsAuthenticated])
+# def update_session_title(request, session_id):
+#     """Update session title (only for authenticated users)"""
+#     try:
+#         session = Session.objects.get(id=session_id, user=request.user)
+#         new_title = request.data.get('title', '').strip()
+#         if not new_title:
+#             return Response({"error": "Title is required"}, status=400)
+        
+#         session.title = new_title
+#         session.save()
+#         return Response({"message": "Session title updated successfully"})
+#     except Session.DoesNotExist:
+#         return Response({"error": "Session not found"}, status=404)
+
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def update_session_title(request, session_id):
-    """Update session title (only for authenticated users)"""
     try:
-        session = Session.objects.get(id=session_id, user=request.user)
+        if request.user.is_authenticated:
+            session = Session.objects.get(id=session_id, user=request.user)
+        else:
+            guest_session_id = request.data.get('guest_session_id')
+            if not guest_session_id:
+                return Response({"error": "Guest session ID required"}, status=400)
+            session = Session.objects.get(id=session_id, is_guest_session=True, guest_session_id=guest_session_id)
+
         new_title = request.data.get('title', '').strip()
         if not new_title:
             return Response({"error": "Title is required"}, status=400)
-        
+
         session.title = new_title
         session.save()
         return Response({"message": "Session title updated successfully"})
     except Session.DoesNotExist:
         return Response({"error": "Session not found"}, status=404)
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
