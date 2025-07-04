@@ -106,6 +106,8 @@ const ChatBox = () => {
               .join("\n")}\n\nCurrent question: ${messageText}`
           : messageText;
 
+      console.log("Sending context:", contextString);
+
       const response = await fetch("http://localhost:8000/api/chat/", {
         method: "POST",
         headers: {
@@ -203,6 +205,7 @@ const ChatBox = () => {
             ? {
                 ...session,
                 messageCount: 0,
+                title: "New Chat",
                 updatedAt: new Date().toISOString(),
               }
             : session
